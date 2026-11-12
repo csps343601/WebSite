@@ -88,9 +88,16 @@
           <label class="f" style="margin-bottom:6px">物品照片 <small>選填，系統會自動壓縮</small></label>
           <div class="photo-drop" id="photoDrop">
             <div class="ph" id="photoPrev">📷</div>
-            <div><b>點此選擇照片</b> 或拖曳圖片到這裡<br><span class="meta">手機可直接拍照上傳</span>
-              <div><button type="button" class="btn sm hidden" id="photoClear" style="margin-top:6px">移除照片</button></div></div>
+            <div><b>上傳物品照片</b><span class="meta">（電腦可直接拖曳圖片到這裡）</span>
+              <div class="photo-btns">
+                <button type="button" class="btn sm pri" id="camBtn">📷 拍照</button>
+                <button type="button" class="btn sm" id="albumBtn">🖼️ 從相簿選擇</button>
+                <button type="button" class="btn sm hidden" id="photoClear">移除照片</button>
+              </div>
+              <div class="tip">若拍照畫面全黑，請改用「從相簿選擇」，或用 Chrome / Safari 開啟網站（LINE、FB 內建瀏覽器常無法使用相機）。</div>
+            </div>
           </div>
+          <input type="file" id="camInput" accept="image/*" capture="environment" class="hidden">
           <input type="file" id="photoInput" accept="image/*" class="hidden">
         </div>
 

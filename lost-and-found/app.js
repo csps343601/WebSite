@@ -39,7 +39,7 @@ const store = {
   get(k){ try { return localStorage.getItem(k); } catch { return null; } },
   set(k,v){ try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
-function toast(msg){ const t = document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 2800); }
+function toast(msg){ document.querySelectorAll('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 2800); }
 function statusOf(it){
   if (it.status === '已認領') return 'done';
   if (it.status === '已處置') return 'gone';
@@ -51,6 +51,13 @@ const badge = st => `<span class="badge b-${st}">${ST_LABEL[st]}</span>`;
 function photoSrc(it){
   const p = it.photoId; if (!p) return '';
   return p.startsWith('data:') ? p : `https://drive.google.com/thumbnail?id=${encodeURIComponent(p)}&sz=w800`;
+}
+// 完整顯示照片（不裁切），背後用同一張照片模糊填滿
+function imgFit(it){
+  const src = photoSrc(it);
+  if (!src) return catIcon(it.category);
+  const e = esc(src);
+  return `<div class="fitbox"><div class="bg" style="background-image:url('${e}')"></div><img src="${e}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.replaceWith(document.createTextNode('${catIcon(it.category)}'))"></div>`;
 }
 function imgTag(it, cls){
   const src = photoSrc(it);
@@ -318,7 +325,7 @@ function renderBoard(){
   $('#grid').innerHTML = onlyBar + list.map(it => {
     const st = statusOf(it);
     return `<div class="card ${S.newIds.has(it.id) && isOpenItem(it) ? 'fresh' : ''}" data-id="${esc(it.id)}">
-      <div class="thumb">${imgTag(it)}<span class="st">${badge(st==='over'?'wait':st)}</span>${isNew(it) ? '<span class="newtag">NEW</span>' : ''}</div>
+      <div class="thumb">${imgFit(it)}<span class="st">${badge(st==='over'?'wait':st)}</span>${isNew(it) ? '<span class="newtag">NEW</span>' : ''}</div>
       <div class="body">
         <h3>${esc(it.name)}</h3>
         <div class="meta">${catIcon(it.category)} ${esc(it.category||'其他')}${it.color?' · '+esc(it.color):''}</div>
@@ -454,10 +461,13 @@ function startEdit(id){
 }
 $('#regReset').addEventListener('click', () => { const was = S.editId; resetForm(); if (was) location.hash = '#manage'; });
 
-const drop = $('#photoDrop'), pin = $('#photoInput');
-drop.addEventListener('click', e => { if (e.target.id !== 'photoClear') pin.click(); });
+const drop = $('#photoDrop'), pin = $('#photoInput'), cin = $('#camInput');
+drop.addEventListener('click', e => { if (!e.target.closest('button')) pin.click(); });
+$('#camBtn').addEventListener('click', e => { e.stopPropagation(); cin.value = ''; cin.click(); });
+$('#albumBtn').addEventListener('click', e => { e.stopPropagation(); pin.value = ''; pin.click(); });
+cin.addEventListener('change', () => { if (cin.files[0]) loadPhoto(cin.files[0]); });
 $('#photoClear').addEventListener('click', e => {
-  e.stopPropagation(); S.photoNew = null; pin.value = '';
+  e.stopPropagation(); S.photoNew = null; pin.value = ''; cin.value = '';
   if (S.photoExisting) S.photoRemoved = true;
   showPhoto(null);
 });
@@ -465,20 +475,36 @@ drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderCo
 drop.addEventListener('dragleave', () => drop.style.borderColor='');
 drop.addEventListener('drop', e => { e.preventDefault(); drop.style.borderColor=''; const f = e.dataTransfer.files[0]; if (f) loadPhoto(f); });
 pin.addEventListener('change', () => { if (pin.files[0]) loadPhoto(pin.files[0]); });
-function loadPhoto(file){
-  if (!file.type.startsWith('image/')) return toast('請選擇圖片檔');
-  const url = URL.createObjectURL(file), img = new Image();
-  img.onload = () => {
-    const M = 1000, s = Math.min(1, M / Math.max(img.width, img.height));
-    const c = document.createElement('canvas'); c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    let q = .78, out = c.toDataURL('image/jpeg', q);
-    while (out.length > 400000 && q > .35){ q -= .1; out = c.toDataURL('image/jpeg', q); }
-    URL.revokeObjectURL(url);
-    S.photoNew = out; S.photoRemoved = !!S.photoExisting; showPhoto(out);
-  };
-  img.onerror = () => toast('無法讀取這張圖片');
-  img.src = url;
+async function loadPhoto(file){
+  const looksImage = (file.type || '').startsWith('image/') || /\.(jpe?g|png|webp|heic|heif|gif|bmp)$/i.test(file.name || '');
+  if (!looksImage) return toast('請選擇圖片檔');
+  toast('照片處理中…');
+  const M = 1200;
+  let src = null, w = 0, h = 0, cleanup = () => {};
+  try {
+    // createImageBitmap 會依 EXIF 轉正方向，且較省記憶體（手機大照片不易失敗）
+    if (window.createImageBitmap){
+      const bmp = await createImageBitmap(file, {imageOrientation: 'from-image'});
+      src = bmp; w = bmp.width; h = bmp.height; cleanup = () => bmp.close && bmp.close();
+    }
+  } catch {}
+  if (!src){
+    try {
+      const url = URL.createObjectURL(file);
+      const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+      src = img; w = img.naturalWidth; h = img.naturalHeight; cleanup = () => URL.revokeObjectURL(url);
+    } catch {
+      return toast('無法讀取這張照片（若是 HEIC 格式，請在相機設定改用「最相容」格式）');
+    }
+  }
+  const sc = Math.min(1, M / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+  c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+  cleanup();
+  let q = .8, out = c.toDataURL('image/jpeg', q);
+  while (out.length > 450000 && q > .35){ q -= .1; out = c.toDataURL('image/jpeg', q); }
+  S.photoNew = out; S.photoRemoved = !!S.photoExisting; showPhoto(out);
+  toast('照片已準備好，按「登記物品」即可上傳');
 }
 
 $('#regSubmit').addEventListener('click', async () => {
@@ -700,7 +726,7 @@ function kShow(){
   }
   K.i = ((K.i % list.length) + list.length) % list.length;
   const it = list[K.i];
-  $('#kStage').innerHTML = `<div class="k-photo k-anim">${imgTag(it)}</div>
+  $('#kStage').innerHTML = `<div class="k-photo k-anim">${imgFit(it)}</div>
     <div class="k-info k-anim">
       <div class="k-cat">${catIcon(it.category)} ${esc(it.category||'其他')}</div>
       <h2>${esc(it.name)}${isNew(it) ? '<span class="k-new">NEW</span>' : ''}</h2>
