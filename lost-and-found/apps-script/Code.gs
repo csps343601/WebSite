@@ -48,6 +48,32 @@ const SETTING_NOTES = {
   locations: '常用拾獲地點，以逗號分隔',
 };
 
+/* ===================== 初始化（請先執行這個） ===================== */
+
+/** 第一次使用：在 Apps Script 編輯器執行這個函式 */
+function setup() {
+  itemsSheet_();
+  const st = settingsSheet_();
+  if (st.getLastRow() < 2) saveSettings_({});
+  photoFolder_();
+  const { sh, users } = readUsers_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const blank = ss.getSheetByName('工作表1') || ss.getSheetByName('Sheet1');
+  if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  usersSheet_().hideSheet();
+
+  if (!users.length) {
+    const password = randomPassword_();
+    const salt = Utilities.getUuid();
+    sh.getRange(2, 1, 1, 6).setNumberFormat('@').setValues([['admin', '系統管理者', 'admin', salt, hash_(salt, password), now_()]]);
+    const msg = '初始化完成！\n管理者帳號：admin\n臨時密碼：' + password + '\n登入網站後請到「設定」變更密碼。';
+    Logger.log(msg);
+    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  } else {
+    Logger.log('初始化完成（已有帳號，未建立新的管理者）。');
+  }
+}
+
 /* ===================== 進入點 ===================== */
 
 function doGet() {
@@ -451,30 +477,6 @@ function withLock_(fn) {
 }
 
 /* ===================== 初始化與選單 ===================== */
-
-/** 第一次使用：在 Apps Script 編輯器執行這個函式 */
-function setup() {
-  itemsSheet_();
-  const st = settingsSheet_();
-  if (st.getLastRow() < 2) saveSettings_({});
-  photoFolder_();
-  const { sh, users } = readUsers_();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const blank = ss.getSheetByName('工作表1') || ss.getSheetByName('Sheet1');
-  if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
-  usersSheet_().hideSheet();
-
-  if (!users.length) {
-    const password = randomPassword_();
-    const salt = Utilities.getUuid();
-    sh.getRange(2, 1, 1, 6).setNumberFormat('@').setValues([['admin', '系統管理者', 'admin', salt, hash_(salt, password), now_()]]);
-    const msg = '初始化完成！\n管理者帳號：admin\n臨時密碼：' + password + '\n登入網站後請到「設定」變更密碼。';
-    Logger.log(msg);
-    try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
-  } else {
-    Logger.log('初始化完成（已有帳號，未建立新的管理者）。');
-  }
-}
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('失物招領')
