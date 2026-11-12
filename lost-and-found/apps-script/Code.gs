@@ -15,6 +15,7 @@ const SESSION_SECONDS = 6 * 60 * 60;      // 登入有效 6 小時
 const MAX_LOGIN_FAILS = 5;                 // 連續失敗 5 次鎖定
 const LOCK_SECONDS = 10 * 60;              // 鎖定 10 分鐘
 const HASH_ROUNDS = 200;
+const TZ = 'Asia/Taipei';                  // 台灣時間，不受專案時區設定影響
 
 // [欄位代號, 試算表標題]
 const COLS = [
@@ -76,8 +77,8 @@ function json_(obj) {
 function handle_(req) {
   const action = String(req.action || '');
   if (action === 'list') {
-    const s = getSession_(req.token);
-    return { items: listItems_(!!s), settings: getSettings_(), me: s ? publicMe_(s) : null };
+    const s = getSession_(req.token, false);   // 自動更新不延長登入時間
+    return { items: s ? listItems_(true) : publicListCached_(), settings: getSettings_(), me: s ? publicMe_(s) : null };
   }
   if (action === 'login') return login_(req.username, req.password);
 
@@ -117,7 +118,7 @@ function headerMap_(sh) {
 }
 
 function cell_(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (v instanceof Date) return Utilities.formatDate(v, TZ, 'yyyy-MM-dd');
   return v === null || v === undefined ? '' : String(v);
 }
 
@@ -144,6 +145,17 @@ function listItems_(staff) {
   }).filter(o => staff || o.status !== '已處置');
 }
 
+function publicListCached_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('pub_list');
+  if (hit) return JSON.parse(hit);
+  const items = listItems_(false);
+  try { cache.put('pub_list', JSON.stringify(items), 30); } catch (e) {}   // 超過快取上限就不快取
+  return items;
+}
+
+function clearPublicCache_() { CacheService.getScriptCache().remove('pub_list'); }
+
 function writeRow_(ctx, obj) {
   const { sh, hm } = ctx;
   const row = obj._row || sh.getLastRow() + 1;
@@ -151,6 +163,7 @@ function writeRow_(ctx, obj) {
   const cur = obj._row ? range.getValues()[0] : new Array(hm.width).fill('');
   Object.keys(hm.map).forEach(k => { if (k in obj) cur[hm.map[k]] = obj[k] === undefined ? '' : String(obj[k]); });
   range.setNumberFormat('@').setValues([cur]);
+  clearPublicCache_();
 }
 
 function findItem_(ctx, id) {
@@ -160,7 +173,7 @@ function findItem_(ctx, id) {
 }
 
 function clean_(v, max) { return String(v === undefined || v === null ? '' : v).trim().slice(0, max || 300); }
-function now_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss'); }
+function now_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'); }
 function isDate_(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
 
 function saveItem_(req, s) {
@@ -239,6 +252,7 @@ function deleteItem_(req) {
   const it = findItem_(ctx, req.id);
   if (it.photoId) trashFile_(it.photoId);
   ctx.sh.deleteRow(it._row);
+  clearPublicCache_();
   return {};
 }
 
@@ -350,7 +364,7 @@ function login_(username, password) {
   return { token, me: publicMe_(s) };
 }
 
-function getSession_(token) {
+function getSession_(token, extend) {
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const cache = CacheService.getScriptCache();
   const raw = cache.get('s_' + token);
@@ -360,7 +374,7 @@ function getSession_(token) {
   const user = findUser_(readUsers_().users, s.username);
   if (!user) { cache.remove('s_' + token); return null; }
   s.role = user.role; s.name = user.name || user.username;
-  cache.put('s_' + token, JSON.stringify(s), SESSION_SECONDS);   // 有使用就延長
+  if (extend !== false) cache.put('s_' + token, JSON.stringify(s), SESSION_SECONDS);   // 有操作才延長
   return s;
 }
 
@@ -391,8 +405,7 @@ function addUser_(req) {
   const role = req.role === 'admin' ? 'admin' : 'staff';
   const password = randomPassword_();
   const salt = Utilities.getUuid();
-  sh.appendRow(['', '', '', '', '', '']);
-  const row = sh.getLastRow();
+  const row = sh.getLastRow() + 1;
   sh.getRange(row, 1, 1, 6).setNumberFormat('@')
     .setValues([[username, clean_(req.name, 40) || username, role, salt, hash_(salt, password), now_()]]);
   return { password };
