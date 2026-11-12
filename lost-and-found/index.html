@@ -26,6 +26,7 @@
       <a href="#register" data-v="register" class="staff">登記拾獲</a>
       <a href="#manage" data-v="manage" class="staff">物品清冊</a>
       <a href="#stats" data-v="stats">統計報表</a>
+      <a href="#kiosk" data-v="kiosk">輪播看板</a>
       <a href="#settings" data-v="settings" class="staff">設定</a>
     </nav>
   </div>
@@ -39,6 +40,15 @@
     <div class="notice">
       <div class="ic">📢</div>
       <div id="noticeText">遺失物品者請攜帶學生證至學務處，說明物品特徵後即可認領。</div>
+    </div>
+    <div id="newsbar"></div>
+    <div class="latest hidden" id="latest">
+      <div class="latest-head">
+        <span class="live-dot"></span><h2>最新拾獲</h2><span class="meta" id="latestSub"></span>
+        <span class="sp"></span>
+        <button class="arrow" data-dir="-1" aria-label="往左">‹</button><button class="arrow" data-dir="1" aria-label="往右">›</button>
+      </div>
+      <div class="strip" id="strip"></div>
     </div>
     <div class="filters">
       <div class="search">
@@ -56,6 +66,7 @@
         <option value="30">近 30 天</option>
         <option value="90">近 90 天</option>
       </select>
+      <button class="btn bell" id="bellBtn" type="button" title="有新物品時跳出通知">🔔 新物品通知</button>
     </div>
     <div class="chips" id="catChips"></div>
     <div class="grid" id="grid"><div class="loading" style="grid-column:1/-1">資料載入中…</div></div>
@@ -104,6 +115,7 @@
 
   <!-- 物品清冊 -->
   <section id="v-manage" class="hidden">
+    <div class="alerts" id="alerts"></div>
     <div class="toolbar">
       <div class="search" style="flex:0 1 320px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -112,6 +124,8 @@
       <select id="mStatus">
         <option value="all">全部狀態</option>
         <option value="wait">待認領</option>
+        <option value="today">今日登記</option>
+        <option value="soon">即將到期</option>
         <option value="over">已逾保管期</option>
         <option value="done">已認領</option>
         <option value="gone">已處置</option>
@@ -124,7 +138,7 @@
     </div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th></th><th>編號</th><th>物品</th><th>類別</th><th>拾獲日期</th><th>地點</th><th>存放</th><th>保管天數</th><th>狀態</th><th>認領人</th><th>操作</th></tr></thead>
+        <thead><tr><th></th><th>編號</th><th>物品</th><th>類別</th><th>拾獲日期</th><th>地點</th><th>存放</th><th>保管進度</th><th>狀態</th><th>認領人</th><th>操作</th></tr></thead>
         <tbody id="mBody"></tbody>
       </table>
     </div>
@@ -183,10 +197,27 @@
     </div>
   </section>
 </main>
+<!-- 輪播看板 -->
+<section id="v-kiosk" class="hidden">
+  <div class="k-top">
+    <h1>📢 失物招領</h1><span class="k-clock" id="kClock"></span>
+    <span class="sp"></span>
+    <button class="k-btn" id="kPause">⏸ 暫停</button>
+    <button class="k-btn" id="kFull">⛶ 全螢幕</button>
+    <a class="k-btn" href="#board" style="text-decoration:none">✕ 離開</a>
+  </div>
+  <div class="k-stage" id="kStage"></div>
+  <div class="k-bottom">
+    <div class="k-qr" id="kQr"><div class="box" id="kQrBox"></div><div>掃描查詢<br>所有招領物品</div></div>
+    <div class="k-bar"><div id="kBar"></div></div>
+    <div class="k-count" id="kCount"></div>
+  </div>
+</section>
 <footer id="footer"></footer>
 
 <div id="modalRoot"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

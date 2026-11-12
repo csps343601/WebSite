@@ -22,7 +22,10 @@ const REFRESH_MS = 60000;
 const S = {
   items: [], settings: {...DEFAULT_SETTINGS}, me: null, loaded: false,
   cat: 'all', editId: null, photoNew: null, photoExisting: null, photoRemoved: false,
+  knownIds: null, newIds: new Set(), onlyNew: false, unseen: 0,
 };
+const BASE_TITLE = document.title;
+const SOON_DAYS = 14;
 
 /* ---------- 小工具 ---------- */
 const $ = s => document.querySelector(s);
@@ -75,6 +78,7 @@ async function api(action, payload = {}){
 async function load(quiet){
   try {
     const d = await api('list');
+    detectNew(d.items || []);
     S.items = d.items || [];
     S.settings = {...DEFAULT_SETTINGS, ...(d.settings || {})};
     const hadMe = !!S.me;
@@ -92,6 +96,68 @@ async function load(quiet){
 }
 setInterval(() => { if (document.visibilityState === 'visible' && !$('#modalRoot').innerHTML) load(true); }, REFRESH_MS);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(true); });
+
+/* ---------- 新物品偵測與提示 ---------- */
+const isOpenItem = it => it.status !== '已認領' && it.status !== '已處置';
+const maxCreated = items => items.reduce((m, i) => (i.createdAt || '') > m ? i.createdAt : m, '');
+function detectNew(items){
+  if (!S.knownIds){                       // 第一次載入：和上次造訪比較
+    const last = store.get('lf_last_seen');
+    if (last){
+      const since = items.filter(i => isOpenItem(i) && (i.createdAt || '') > last);
+      since.forEach(i => S.newIds.add(i.id));
+      if (since.length) showNewsbar(since.length);
+    }
+  } else {                                 // 自動更新時：找出剛出現的物品
+    const fresh = items.filter(i => !S.knownIds.has(i.id) && isOpenItem(i));
+    if (fresh.length) onFresh(fresh);
+  }
+  S.knownIds = new Set(items.map(i => i.id));
+  const m = maxCreated(items); if (m) store.set('lf_last_seen', m);
+}
+function onFresh(fresh){
+  fresh.forEach(i => S.newIds.add(i.id));
+  const names = fresh.slice(0, 3).map(i => i.name).join('、') + (fresh.length > 3 ? ` 等 ${fresh.length} 件` : '');
+  toast('🆕 新拾獲：' + names);
+  if (document.visibilityState !== 'visible'){
+    S.unseen += fresh.length;
+    document.title = `(${S.unseen}) ${BASE_TITLE}`;
+  }
+  if (notifyOn() && document.visibilityState !== 'visible'){
+    try {
+      const n = new Notification('失物招領：有新拾獲物品', {body: names, tag: 'lf-new'});
+      n.onclick = () => { window.focus(); location.hash = '#board'; n.close(); };
+    } catch {}
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible'){ S.unseen = 0; document.title = BASE_TITLE; }
+});
+function showNewsbar(n){
+  $('#newsbar').innerHTML = `<div class="newsbar"><span style="font-size:22px">🆕</span>
+    <div class="t">自你上次造訪後，新增了 <b>${n}</b> 件拾獲物品</div>
+    <button class="btn sm" id="nbOnly">只看這些</button><button class="btn sm" id="nbClose">知道了</button></div>`;
+  $('#nbOnly').onclick = () => { S.onlyNew = true; $('#newsbar').innerHTML = ''; location.hash = '#board'; renderBoard(); };
+  $('#nbClose').onclick = () => { $('#newsbar').innerHTML = ''; };
+}
+const isNew = it => isOpenItem(it) && (S.newIds.has(it.id) || daysSince(it.foundDate) <= 2);
+function agoText(it){
+  const d = daysSince(it.foundDate);
+  return d === 0 ? '今天' : d === 1 ? '昨天' : `${d} 天前`;
+}
+
+/* 桌面通知 */
+const notifyOn = () => store.get('lf_notify') === '1' && 'Notification' in window && Notification.permission === 'granted';
+function paintBell(){ $('#bellBtn').classList.toggle('on', notifyOn()); $('#bellBtn').textContent = notifyOn() ? '🔔 通知已開啟' : '🔔 新物品通知'; }
+$('#bellBtn').addEventListener('click', async () => {
+  if (!('Notification' in window)) return toast('這個瀏覽器不支援通知');
+  if (notifyOn()){ store.set('lf_notify', null); paintBell(); return toast('已關閉新物品通知'); }
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') return toast('瀏覽器拒絕了通知，請在網址列旁的設定中允許');
+  store.set('lf_notify', '1'); paintBell();
+  toast('已開啟：這個分頁開著時，有新物品會跳出通知');
+});
 
 /* ---------- 展示模式（未設定 API 時） ---------- */
 const demo = { items: [], users: [{username:'admin', name:'系統管理者', role:'admin', createdAt: today()}], seq: 0 };
@@ -134,7 +200,7 @@ function demoApi(action, p){
 }
 
 /* ---------- 路由與身分 ---------- */
-const VIEWS = ['board','register','manage','stats','settings'];
+const VIEWS = ['board','register','manage','stats','settings','kiosk'];
 const STAFF_VIEWS = ['register','manage','settings'];
 function route(){
   let v = (location.hash || '#board').slice(1);
@@ -144,6 +210,7 @@ function route(){
   document.querySelectorAll('nav.tabs a').forEach(a => a.classList.toggle('on', a.dataset.v === v));
   if (v === 'register' && !S.editId) resetForm();
   if (v === 'settings') openSettings();
+  v === 'kiosk' ? startKiosk() : stopKiosk();
   render();
 }
 window.addEventListener('hashchange', route);
@@ -195,6 +262,7 @@ function render(){
   $('#noticeText').textContent = S.settings.notice;
   if (!S.loaded) return;
   renderBoard(); renderManage(); renderStats();
+  if (K.clock && !$('#kStage .k-info')) kShow();
 }
 function setBanner(html, cls){ $('#banner').innerHTML = html ? `<div class="banner ${cls||'info'}">${html}</div>` : (DEMO ? demoBanner() : ''); }
 const demoBanner = () => `<div class="banner warn"><b>展示模式</b>：尚未設定 Google Apps Script 網址，資料只存在這個分頁中，重新整理就會消失。設定方式請見 README。</div>`;
@@ -214,8 +282,22 @@ function matchQ(it, q, extra){
 }
 const byNewest = (a,b) => (b.foundDate||'').localeCompare(a.foundDate||'') || (b.createdAt||'').localeCompare(a.createdAt||'');
 
+function renderLatest(){
+  const list = S.items.filter(isOpenItem).filter(i => daysSince(i.foundDate) <= 14)
+    .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')).slice(0, 12);
+  $('#latest').classList.toggle('hidden', !list.length);
+  if (!list.length) return;
+  $('#latestSub').textContent = `近 14 天共 ${list.length} 件`;
+  $('#strip').innerHTML = list.map(it => `<div class="mcard" data-id="${esc(it.id)}">
+    <div class="mt">${imgTag(it)}</div>
+    <div style="min-width:0"><div class="mn">${esc(it.name)}</div><div class="mm">📍 ${esc(it.location)}</div><div class="ago">${agoText(it)}拾獲</div></div>
+    ${isNew(it) ? '<span class="newtag">NEW</span>' : ''}</div>`).join('');
+}
+$('#strip').addEventListener('click', e => { const c = e.target.closest('.mcard'); if (c) showDetail(c.dataset.id); });
+document.querySelectorAll('.latest .arrow').forEach(b => b.addEventListener('click', () => $('#strip').scrollBy({left: +b.dataset.dir * 420, behavior: 'smooth'})));
+
 function renderBoard(){
-  renderChips();
+  renderChips(); renderLatest();
   const q = $('#q').value.trim(), fs = $('#fStatus').value, fr = $('#fRange').value;
   const list = S.items.filter(it => {
     const st = statusOf(it);
@@ -224,16 +306,19 @@ function renderBoard(){
     if (fs === 'done' && st !== 'done') return false;
     if (S.cat !== 'all' && (CAT[it.category] ? it.category : '其他') !== S.cat) return false;
     if (fr !== 'all' && daysSince(it.foundDate) > +fr) return false;
+    if (S.onlyNew && !S.newIds.has(it.id)) return false;
     return matchQ(it, q);
   }).sort(byNewest);
+  const onlyBar = S.onlyNew ? `<div class="banner info" style="grid-column:1/-1;display:flex;align-items:center;gap:10px;margin:0">🆕 只顯示你上次造訪後新增的物品<span style="flex:1"></span><button class="btn sm" id="clearOnly">顯示全部</button></div>` : '';
   if (!list.length){
-    $('#grid').innerHTML = `<div class="empty" style="grid-column:1/-1">${S.items.length ? '找不到符合條件的物品，試試其他關鍵字或類別。' : '目前沒有招領中的物品。'}${isStaff() && !S.items.length ? '<br><br><a class="btn pri" href="#register" style="text-decoration:none">登記第一件拾獲物品</a>':''}</div>`;
+    $('#grid').innerHTML = onlyBar + `<div class="empty" style="grid-column:1/-1">${S.items.length ? '找不到符合條件的物品，試試其他關鍵字或類別。' : '目前沒有招領中的物品。'}${isStaff() && !S.items.length ? '<br><br><a class="btn pri" href="#register" style="text-decoration:none">登記第一件拾獲物品</a>':''}</div>`;
+    $('#clearOnly')?.addEventListener('click', () => { S.onlyNew = false; renderBoard(); });
     return;
   }
-  $('#grid').innerHTML = list.map(it => {
+  $('#grid').innerHTML = onlyBar + list.map(it => {
     const st = statusOf(it);
-    return `<div class="card" data-id="${esc(it.id)}">
-      <div class="thumb">${imgTag(it)}<span class="st">${badge(st==='over'?'wait':st)}</span></div>
+    return `<div class="card ${S.newIds.has(it.id) && isOpenItem(it) ? 'fresh' : ''}" data-id="${esc(it.id)}">
+      <div class="thumb">${imgTag(it)}<span class="st">${badge(st==='over'?'wait':st)}</span>${isNew(it) ? '<span class="newtag">NEW</span>' : ''}</div>
       <div class="body">
         <h3>${esc(it.name)}</h3>
         <div class="meta">${catIcon(it.category)} ${esc(it.category||'其他')}${it.color?' · '+esc(it.color):''}</div>
@@ -241,6 +326,7 @@ function renderBoard(){
         <div class="code">${esc(it.code)}</div>
       </div></div>`;
   }).join('');
+  $('#clearOnly')?.addEventListener('click', () => { S.onlyNew = false; renderBoard(); });
 }
 $('#grid').addEventListener('click', e => { const c = e.target.closest('.card'); if (c) showDetail(c.dataset.id); });
 ['#q','#fStatus','#fRange'].forEach(s => $(s).addEventListener('input', renderBoard));
@@ -248,13 +334,42 @@ $('#grid').addEventListener('click', e => { const c = e.target.closest('.card');
 function manageList(){
   const q = $('#mq').value.trim(), fs = $('#mStatus').value, fc = $('#mCat').value;
   return S.items.filter(it => {
-    if (fs !== 'all' && statusOf(it) !== fs) return false;
+    const st = statusOf(it);
+    if (fs === 'today'){ if ((it.createdAt||'').slice(0,10) !== today()) return false; }
+    else if (fs === 'soon'){ if (!(st === 'wait' && remain(it) <= SOON_DAYS)) return false; }
+    else if (fs !== 'all' && st !== fs) return false;
     if (fc !== 'all' && it.category !== fc) return false;
     return matchQ(it, q, [it.finder, it.claimName, it.claimSid, it.storage]);
   }).sort(byNewest);
 }
+const retention = () => +S.settings.retentionDays || 180;
+const remain = it => retention() - daysSince(it.foundDate);
+function keepCell(it, st){
+  if (st === 'done' || st === 'gone') return '—';
+  const d = daysSince(it.foundDate), r = remain(it), pct = Math.min(100, d / retention() * 100);
+  const cls = st === 'over' ? 'over' : r <= SOON_DAYS ? 'soon' : '';
+  const txt = st === 'over' ? `逾期 ${-r} 天` : `第 ${d} 天・剩 ${r} 天`;
+  return `<div class="keep ${cls}"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span>${txt}</span></div>`;
+}
+function renderAlerts(){
+  const over = S.items.filter(i => statusOf(i) === 'over').length;
+  const soon = S.items.filter(i => statusOf(i) === 'wait' && remain(i) <= SOON_DAYS).length;
+  const td = S.items.filter(i => (i.createdAt||'').slice(0,10) === today()).length;
+  const cur = $('#mStatus').value;
+  const a = [];
+  if (over) a.push(`<div class="alert a-over ${cur==='over'?'on':''}" data-f="over"><span class="n">${over}</span><span>件已逾保管期<br><small>請安排處置</small></span></div>`);
+  if (soon) a.push(`<div class="alert a-soon ${cur==='soon'?'on':''}" data-f="soon"><span class="n">${soon}</span><span>件 ${SOON_DAYS} 天內到期<br><small>可再公告提醒</small></span></div>`);
+  a.push(`<div class="alert a-today ${cur==='today'?'on':''}" data-f="today"><span class="n">${td}</span><span>件今日登記<br><small>點擊查看</small></span></div>`);
+  $('#alerts').innerHTML = a.join('');
+}
+$('#alerts').addEventListener('click', e => {
+  const el = e.target.closest('.alert'); if (!el) return;
+  $('#mStatus').value = $('#mStatus').value === el.dataset.f ? 'all' : el.dataset.f;
+  renderManage();
+});
 function renderManage(){
   if (!isStaff()) return;
+  renderAlerts();
   const list = manageList();
   $('#mBody').innerHTML = list.length ? list.map(it => {
     const st = statusOf(it);
@@ -266,7 +381,7 @@ function renderManage(){
       <td>${fmtDate(it.foundDate)}</td>
       <td>${esc(it.location)}</td>
       <td>${esc(it.storage||'—')}</td>
-      <td style="color:${st==='over'?'var(--warn)':'inherit'}">${st==='done'||st==='gone'?'—':daysSince(it.foundDate)+' 天'}</td>
+      <td>${keepCell(it, st)}</td>
       <td>${badge(st)}</td>
       <td>${it.claimName?esc(it.claimName)+(it.claimSid?`<div class="meta">${esc(it.claimSid)}</div>`:''):'—'}</td>
       <td><div class="rowacts">
@@ -375,6 +490,7 @@ $('#regSubmit').addEventListener('click', async () => {
   const btn = $('#regSubmit'); btn.disabled = true; btn.textContent = '儲存中…';
   try {
     const d = await api('saveItem', {item, photoData: S.photoNew || '', removePhoto: S.photoRemoved && !S.photoNew});
+    S.knownIds?.add(d.id);
     const wasEdit = !!S.editId;
     toast(wasEdit ? '已儲存變更' : `已登記，編號 ${d.code}`);
     resetForm(); await load();
@@ -555,8 +671,63 @@ $('#uForm').addEventListener('submit', async e => {
   catch(err){ toast(err.message); } finally { btn.disabled = false; }
 });
 
+/* ---------- 輪播看板 ---------- */
+const K = {i: 0, timer: null, clock: null, paused: false, ms: 8000, qr: false};
+const kList = () => S.items.filter(i => { const st = statusOf(i); return st === 'wait' || st === 'over'; })
+  .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+function startKiosk(){
+  document.body.style.overflow = 'hidden';
+  if (K.clock) return;
+  const tick = () => { const d = new Date(); $('#kClock').textContent = d.toLocaleDateString('zh-TW', {month:'long', day:'numeric', weekday:'short'}) + '　' + d.toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'}); };
+  tick(); K.clock = setInterval(tick, 1000);
+  if (!K.qr){
+    if (window.QRCode){ new QRCode($('#kQrBox'), {text: location.href.split('#')[0], width: 160, height: 160}); K.qr = true; }
+    else $('#kQr').style.display = 'none';
+  }
+  K.i = 0; kShow(); kPlay();
+}
+function stopKiosk(){
+  if (!K.clock) return;
+  document.body.style.overflow = '';
+  clearInterval(K.clock); clearTimeout(K.timer); K.clock = K.timer = null;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(()=>{});
+}
+function kShow(){
+  const list = kList();
+  if (!list.length){
+    $('#kStage').innerHTML = `<div class="k-empty">${S.loaded ? '目前沒有招領中的物品 🎉' : '資料載入中…'}</div>`;
+    $('#kCount').textContent = ''; return;
+  }
+  K.i = ((K.i % list.length) + list.length) % list.length;
+  const it = list[K.i];
+  $('#kStage').innerHTML = `<div class="k-photo k-anim">${imgTag(it)}</div>
+    <div class="k-info k-anim">
+      <div class="k-cat">${catIcon(it.category)} ${esc(it.category||'其他')}</div>
+      <h2>${esc(it.name)}${isNew(it) ? '<span class="k-new">NEW</span>' : ''}</h2>
+      ${it.color ? `<div class="k-row">🎨 ${esc(it.color)}</div>` : ''}
+      <div class="k-row">📍 ${esc(it.location)}</div>
+      <div class="k-row">📅 ${fmtDate(it.foundDate)}（${agoText(it)}）</div>
+      ${it.desc ? `<div class="k-row" style="opacity:.8">${esc(it.desc)}</div>` : ''}
+      <div class="k-code">認領編號 ${esc(it.code)}</div>
+    </div>`;
+  $('#kCount').textContent = `${K.i + 1} / ${list.length}`;
+  const bar = $('#kBar'); bar.style.transition = 'none'; bar.style.width = '0';
+  if (!K.paused){ void bar.offsetWidth; bar.style.transition = `width ${K.ms}ms linear`; bar.style.width = '100%'; }
+}
+function kPlay(){ clearTimeout(K.timer); if (!K.paused && K.clock) K.timer = setTimeout(() => { K.i++; kShow(); kPlay(); }, K.ms); }
+function kStep(n){ K.i += n; kShow(); kPlay(); }
+$('#kStage').addEventListener('click', () => kStep(1));
+$('#kPause').addEventListener('click', () => { K.paused = !K.paused; $('#kPause').textContent = K.paused ? '▶ 播放' : '⏸ 暫停'; kShow(); kPlay(); });
+$('#kFull').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(() => toast('瀏覽器不允許全螢幕')); });
+document.addEventListener('keydown', e => {
+  if (!K.clock) return;
+  if (e.key === 'ArrowRight') kStep(1);
+  else if (e.key === 'ArrowLeft') kStep(-1);
+  else if (e.key === ' '){ e.preventDefault(); $('#kPause').click(); }
+});
+
 /* ---------- 啟動 ---------- */
-fillSelects(); fillLocs(); resetForm(); applyRole(); setBanner(''); route();
+fillSelects(); fillLocs(); resetForm(); applyRole(); setBanner(''); paintBell(); route();
 $('#footer').textContent = DEMO ? '展示模式' : '資料每分鐘自動更新';
 load();
 })();
