@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>中山國小遺失物招領｜輪播看板</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📢</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!--
+  臺北市中山國小遺失物招領系統 — 輪播看板（獨立版）
+  ・直接用瀏覽器開啟即可，不需要其他檔案；可放在 GitHub Pages，也可存到電視電腦的桌面雙擊開啟。
+  ・每 60 秒自動向資料庫抓最新物品；有新物品會排到最前面並跳出提示。
+  ・每天凌晨 3 點自動重新整理一次頁面，長時間開著也不會卡住。
+  ・網址參數（可選）：?sec=10 每件停留秒數（預設 8）、?days=30 只顯示近 N 天拾獲的物品
+  ・鍵盤：← → 切換、空白鍵暫停、F 全螢幕
+-->
+<style>
+:root{--accent:#e0913a;--red:#e5533d}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:"Noto Sans TC",system-ui,sans-serif;background:radial-gradient(circle at 20% 10%,#24676e,#123a3f 70%);color:#fff;display:flex;flex-direction:column;padding:2.2vh 3vw 1.8vh;cursor:default}
+body.hidecursor{cursor:none}
+.top{display:flex;align-items:center;gap:1.2vw}
+.top h1{margin:0;font-size:clamp(20px,2.5vw,40px);font-weight:900;letter-spacing:.08em}
+.clock{font-size:clamp(14px,1.6vw,26px);opacity:.85;font-variant-numeric:tabular-nums}
+.sp{flex:1}
+.btn{background:#ffffff1a;border:1px solid #ffffff40;color:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font:inherit;font-size:14px;transition:opacity .3s}
+.btn:hover{background:#ffffff33}
+body.idle .btn{opacity:0;pointer-events:none}
+.status{font-size:13px;display:flex;align-items:center;gap:6px;opacity:.8}
+.dot{width:9px;height:9px;border-radius:50%;background:#4ade80}
+.dot.off{background:#f87171;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.3}}
+.summary{display:flex;gap:1.2vw;margin-top:1.4vh;flex-wrap:wrap}
+.pill{background:#ffffff14;border-radius:999px;padding:.5vh 1vw;font-size:clamp(12px,1.1vw,18px)}
+.pill b{color:var(--accent);font-size:1.15em}
+.stage{flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:3vw;align-items:center;min-height:0;padding:2.5vh 0}
+.photo{position:relative;height:62vh;border-radius:24px;background:#ffffff12;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:clamp(90px,14vw,220px)}
+.photo .bg{position:absolute;inset:-30px;background-size:cover;background-position:center;filter:blur(30px) brightness(.55);transform:scale(1.1)}
+.photo img{position:relative;max-width:100%;max-height:100%;object-fit:contain;display:block}
+.cat{font-size:clamp(14px,1.4vw,22px);opacity:.8}
+.info h2{font-size:clamp(30px,4.4vw,74px);margin:.6vh 0 2vh;line-height:1.15;word-break:break-word}
+.row{font-size:clamp(16px,1.7vw,28px);margin:1vh 0;opacity:.95}
+.desc{opacity:.8}
+.code{display:inline-block;margin-top:2vh;font-family:ui-monospace,Menlo,monospace;background:#ffffff1f;padding:1vh 1.2vw;border-radius:10px;font-size:clamp(16px,1.6vw,26px)}
+.new{display:inline-block;background:var(--red);color:#fff;font-weight:900;padding:.3vh .8vw;border-radius:8px;font-size:clamp(13px,1.2vw,20px);margin-left:.8vw;vertical-align:middle;animation:pop 1.6s ease-in-out infinite}
+@keyframes pop{50%{transform:scale(1.08)}}
+.anim{animation:fade .6s ease}
+@keyframes fade{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+.empty{grid-column:1/-1;text-align:center;font-size:clamp(22px,3vw,44px);opacity:.85;line-height:1.6}
+.bottom{display:flex;align-items:center;gap:1.6vw}
+.qr{display:flex;align-items:center;gap:12px;font-size:clamp(12px,1vw,16px);opacity:.95}
+.qr .box{background:#fff;padding:6px;border-radius:8px;width:96px;height:96px;display:grid;place-items:center}
+.qr .box img,.qr .box canvas{width:84px!important;height:84px!important}
+.bar{flex:1;height:6px;background:#ffffff26;border-radius:4px;overflow:hidden}
+.bar div{height:100%;background:var(--accent);width:0}
+.count{font-size:14px;opacity:.8;font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
+.toast{position:fixed;top:15vh;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;font-weight:700;padding:1.2vh 2vw;border-radius:14px;font-size:clamp(16px,1.6vw,26px);box-shadow:0 10px 30px rgba(0,0,0,.3);animation:drop .5s ease;z-index:10}
+@keyframes drop{from{opacity:0;transform:translate(-50%,-20px)}to{opacity:1;transform:translate(-50%,0)}}
+@media (max-width:760px){body{padding:16px;overflow:auto}html{overflow:auto}.stage{grid-template-columns:1fr;gap:16px}.photo{height:36vh}.qr{display:none}}
+</style>
+</head>
+<body>
+  <div class="top">
+    <h1>📢 中山國小遺失物招領</h1><span class="clock" id="clock"></span>
+    <span class="sp"></span>
+    <span class="status"><span class="dot" id="dot"></span><span id="statusText">連線中…</span></span>
+    <button class="btn" id="pauseBtn">⏸ 暫停</button>
+    <button class="btn" id="fullBtn">⛶ 全螢幕</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="stage" id="stage"><div class="empty">資料載入中…</div></div>
+  <div class="bottom">
+    <div class="qr" id="qr"><div class="box" id="qrBox"></div><div>手機掃描<br>查詢所有招領物品</div></div>
+    <div class="bar"><div id="bar"></div></div>
+    <div class="count" id="count"></div>
+  </div>
+
+<script>
+(() => {
+'use strict';
+/* ====== 設定 ====== */
+const API_URL  = 'https://script.google.com/macros/s/AKfycbxnEVuftwKNs1Y6iOPtKV7J1FnohdDXmW0OBjKVOT8zFm7uLEBfxd7e9bWh6WUWxJgvRA/exec';
+const SITE_URL = 'https://csps343601.github.io/WebSite/lost-and-found/';   // QR Code 連到的網址
+const params   = new URLSearchParams(location.search);
+const SLIDE_MS = Math.max(3, +params.get('sec') || 8) * 1000;
+const ONLY_DAYS = +params.get('days') || 0;
+const REFRESH_MS = 60000;
+
+const CAT_ICON = {'證件卡片':'🪪','3C 電子':'🎧','錢包鑰匙':'👛','水壺餐具':'🥤','衣物配件':'🧥','書籍文具':'📚','運動用品':'⚽','雨具':'☂️','其他':'📦'};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+const daysSince = ds => ds ? Math.max(0, Math.floor((Date.parse(today()) - Date.parse(ds)) / 864e5)) : 0;
+const fmtDate = ds => ds ? String(ds).slice(0,10).replace(/-/g,'/') : '';
+const ago = d => d === 0 ? '今天' : d === 1 ? '昨天' : `${d} 天前`;
+const icon = c => CAT_ICON[c] || '📦';
+const photoUrl = id => id ? (id.startsWith('data:') ? id : `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1200`) : '';
+
+let items = [], settings = {}, known = null, freshIds = new Set();
+let idx = 0, timer = null, paused = false, lastOk = 0;
+
+/* ====== 抓資料 ====== */
+async function load(){
+  try {
+    const res = await fetch(API_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'list'})});
+    const d = await res.json();
+    if (!d.ok) throw new Error(d.error || '讀取失敗');
+    settings = d.settings || {};
+    const list = (d.items || []).filter(it => it.status !== '已認領' && it.status !== '已處置')
+      .filter(it => !ONLY_DAYS || daysSince(it.foundDate) <= ONLY_DAYS)
+      .sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    if (known){
+      const fresh = list.filter(it => !known.has(it.id));
+      if (fresh.length){
+        fresh.forEach(it => freshIds.add(it.id));
+        showToast(`🆕 新拾獲：${fresh.slice(0,3).map(i => i.name).join('、')}${fresh.length > 3 ? ` 等 ${fresh.length} 件` : ''}`);
+        items = list; idx = list.findIndex(it => it.id === fresh[0].id); show(); play();   // 立刻播放新物品
+      }
+    }
+    known = new Set(list.map(it => it.id));
+    const wasEmpty = !items.length;
+    items = list;
+    lastOk = Date.now(); setStatus(true);
+    renderSummary();
+    if (wasEmpty || !$('#stage .info')) { show(); play(); }
+  } catch (e){
+    console.error(e); setStatus(false);
+    if (!items.length) $('#stage').innerHTML = '<div class="empty">暫時連不上資料庫<br><small>會自動重試，請稍候</small></div>';
+  }
+}
+function setStatus(ok){
+  $('#dot').classList.toggle('off', !ok);
+  const t = new Date(lastOk);
+  $('#statusText').textContent = ok ? `已更新 ${t.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})}`
+    : (lastOk ? `連線中斷，顯示 ${t.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'})} 的資料` : '連線中斷，重試中…');
+}
+function renderSummary(){
+  const week = items.filter(i => daysSince(i.foundDate) <= 7).length;
+  const counts = {}; items.forEach(i => counts[i.category] = (counts[i.category]||0) + 1);
+  const top = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,4).map(([c,n]) => `<span class="pill">${icon(c)} ${esc(c)} <b>${n}</b></span>`).join('');
+  $('#summary').innerHTML = items.length ? `<span class="pill">待認領 <b>${items.length}</b> 件</span><span class="pill">近 7 天新增 <b>${week}</b> 件</span>${top}` : '';
+}
+
+/* ====== 輪播 ====== */
+function show(){
+  if (!items.length){
+    $('#stage').innerHTML = '<div class="empty">目前沒有招領中的物品 🎉<br><small>遺失物品請洽學務處</small></div>';
+    $('#count').textContent = ''; $('#bar').style.width = '0'; return;
+  }
+  idx = ((idx % items.length) + items.length) % items.length;
+  const it = items[idx], src = photoUrl(it.photoId), d = daysSince(it.foundDate);
+  const isNew = freshIds.has(it.id) || d <= 2;
+  const photo = src
+    ? `<div class="bg" style="background-image:url('${esc(src)}')"></div><img src="${esc(src)}" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${icon(it.category)}'">`
+    : icon(it.category);
+  $('#stage').innerHTML = `<div class="photo anim">${photo}</div>
+    <div class="info anim">
+      <div class="cat">${icon(it.category)} ${esc(it.category || '其他')}</div>
+      <h2>${esc(it.name)}${isNew ? '<span class="new">NEW</span>' : ''}</h2>
+      ${it.color ? `<div class="row">🎨 ${esc(it.color)}</div>` : ''}
+      <div class="row">📍 ${esc(it.location)}</div>
+      <div class="row">📅 ${fmtDate(it.foundDate)}（${ago(d)}拾獲）</div>
+      ${it.desc ? `<div class="row desc">${esc(it.desc)}</div>` : ''}
+      <div class="code">認領編號 ${esc(it.code)}</div>
+    </div>`;
+  $('#count').textContent = `${idx + 1} / ${items.length}`;
+  const bar = $('#bar'); bar.style.transition = 'none'; bar.style.width = '0';
+  if (!paused){ void bar.offsetWidth; bar.style.transition = `width ${SLIDE_MS}ms linear`; bar.style.width = '100%'; }
+  // 預先載入下一張照片，切換時不閃白
+  const nx = items[(idx + 1) % items.length]; if (nx && nx.photoId){ const im = new Image(); im.referrerPolicy = 'no-referrer'; im.src = photoUrl(nx.photoId); }
+}
+function play(){ clearTimeout(timer); if (!paused) timer = setTimeout(() => { idx++; show(); play(); }, SLIDE_MS); }
+function step(n){ idx += n; show(); play(); }
+function togglePause(){ paused = !paused; $('#pauseBtn').textContent = paused ? '▶ 播放' : '⏸ 暫停'; show(); play(); }
+function toggleFull(){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.().catch(()=>{}); }
+function showToast(msg){ document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 8000); }
+
+$('#stage').addEventListener('click', () => step(1));
+$('#pauseBtn').addEventListener('click', togglePause);
+$('#fullBtn').addEventListener('click', toggleFull);
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') step(1);
+  else if (e.key === 'ArrowLeft') step(-1);
+  else if (e.key === ' '){ e.preventDefault(); togglePause(); }
+  else if (e.key === 'f' || e.key === 'F') toggleFull();
+});
+
+/* ====== 時鐘、滑鼠隱藏、螢幕不休眠、每日重整 ====== */
+function tick(){
+  const d = new Date();
+  $('#clock').textContent = d.toLocaleDateString('zh-TW',{month:'long',day:'numeric',weekday:'short'}) + '　' + d.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+  if (d.getHours() === 3 && d.getMinutes() === 0 && d.getSeconds() < 2) location.reload();
+}
+let idleT; const wake = () => { document.body.classList.remove('idle','hidecursor'); clearTimeout(idleT); idleT = setTimeout(() => document.body.classList.add('idle','hidecursor'), 4000); };
+['mousemove','touchstart','keydown'].forEach(ev => document.addEventListener(ev, wake)); wake();
+let lock = null;
+async function keepAwake(){ try { if ('wakeLock' in navigator && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen'); } catch {} }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible'){ keepAwake(); load(); } });
+
+/* ====== 啟動 ====== */
+try { if (window.QRCode) new QRCode($('#qrBox'), {text: SITE_URL, width: 168, height: 168}); else $('#qr').style.display = 'none'; } catch { $('#qr').style.display = 'none'; }
+tick(); setInterval(tick, 1000);
+keepAwake();
+load(); setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
