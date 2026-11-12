@@ -1,5 +1,5 @@
 /**
- * 臺北中山國小學務處失物招領系統 — Google Apps Script 後端
+ * 臺北中山國小臺北市中山國小遺失物招領系統 — Google Apps Script 後端
  *
  * 使用方式（詳見 README.md）：
  * 1. 建立一份新的 Google 試算表 → 擴充功能 → Apps Script，把本檔內容貼上並儲存。

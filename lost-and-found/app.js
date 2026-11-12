@@ -1,4 +1,4 @@
-/* 學務處失物招領系統 — 前端程式 */
+/* 臺北市中山國小遺失物招領系統 — 前端程式 */
 (() => {
 'use strict';
 
@@ -136,7 +136,7 @@ function onFresh(fresh){
   }
   if (notifyOn() && document.visibilityState !== 'visible'){
     try {
-      const n = new Notification('失物招領：有新拾獲物品', {body: names, tag: 'lf-new'});
+      const n = new Notification('中山國小遺失物招領：有新拾獲物品', {body: names, tag: 'lf-new'});
       n.onclick = () => { window.focus(); location.hash = '#board'; n.close(); };
     } catch {}
   }
