@@ -1,5 +1,5 @@
 /**
- * 學務處失物招領系統 — Google Apps Script 後端
+ * 臺北中山國小學務處失物招領系統 — Google Apps Script 後端
  *
  * 使用方式（詳見 README.md）：
  * 1. 建立一份新的 Google 試算表 → 擴充功能 → Apps Script，把本檔內容貼上並儲存。
@@ -37,9 +37,9 @@ const ITEM_INPUT_KEYS = ['name', 'category', 'color', 'brand', 'desc', 'foundDat
 const RETENTION_CHOICES = ['7', '14', '30', '60', '120', '180'];
 
 const DEFAULT_SETTINGS = {
-  office: '學務處生活輔導組｜週一至週五 07:30–16:30',
+  office: '學務處｜週一至週五 08:00–16:30',
   notice: '遺失物品者請攜帶學生證至學務處，說明物品特徵後即可認領。保管期滿未認領之物品，將依規定處理。',
-  retentionDays: '180',
+  retentionDays: '14',
   locations: '教室,走廊,操場,體育館,圖書館,福利社,廁所,校門口,司令台,停車場',
 };
 const SETTING_NOTES = {
