@@ -2,5 +2,5 @@
 // 部署 Apps Script 後，把「網頁應用程式」網址（以 /exec 結尾）貼在下方引號中。
 // 留空時，網站會以「展示模式」運作：可以試用所有功能，但資料不會保存。
 window.LF_CONFIG = {
-  apiUrl: '',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbxnEVuftwKNs1Y6iOPtKV7J1FnohdDXmW0OBjKVOT8zFm7uLEBfxd7e9bWh6WUWxJgvRA/exec',
 };
