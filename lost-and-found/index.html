@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>學務處失物招領系統</title>
+<meta name="description" content="學務處失物招領：查詢校內拾獲物品並至學務處認領。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4M12 11v10"/></svg></div>
+      <div>
+        <h1>學務處失物招領系統</h1>
+        <div class="sub" id="officeLine">學務處生活輔導組</div>
+      </div>
+      <div class="userbox" id="userbox"></div>
+    </div>
+    <nav class="tabs">
+      <a href="#board" data-v="board">招領公告</a>
+      <a href="#register" data-v="register" class="staff">登記拾獲</a>
+      <a href="#manage" data-v="manage" class="staff">物品清冊</a>
+      <a href="#stats" data-v="stats">統計報表</a>
+      <a href="#settings" data-v="settings" class="staff">設定</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div id="banner"></div>
+
+  <!-- 招領公告 -->
+  <section id="v-board">
+    <div class="notice">
+      <div class="ic">📢</div>
+      <div id="noticeText">遺失物品者請攜帶學生證至學務處，說明物品特徵後即可認領。</div>
+    </div>
+    <div class="filters">
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="q" type="text" placeholder="搜尋物品名稱、顏色、地點或編號…">
+      </div>
+      <select id="fStatus">
+        <option value="wait">待認領</option>
+        <option value="all">全部狀態</option>
+        <option value="done">已認領</option>
+      </select>
+      <select id="fRange">
+        <option value="all">所有日期</option>
+        <option value="7">近 7 天</option>
+        <option value="30">近 30 天</option>
+        <option value="90">近 90 天</option>
+      </select>
+    </div>
+    <div class="chips" id="catChips"></div>
+    <div class="grid" id="grid"><div class="loading" style="grid-column:1/-1">資料載入中…</div></div>
+  </section>
+
+  <!-- 登記拾獲 -->
+  <section id="v-register" class="hidden">
+    <div class="panel">
+      <h2 id="regTitle">登記拾獲物品</h2>
+      <p class="desc">標示 <span style="color:var(--danger)">*</span> 為必填。「拾獲人」與「辨識特徵」只有登入的處室人員看得到，招領公告不會顯示。</p>
+      <form id="regForm" class="form" autocomplete="off">
+        <div class="sec">物品資訊</div>
+        <label class="f">物品名稱 <span class="req">*</span><input type="text" name="name" required maxlength="60" placeholder="例：藍色保溫瓶"></label>
+        <label class="f">類別 <span class="req">*</span><select name="category" required id="catSelect"></select></label>
+        <label class="f">顏色 / 外觀<input type="text" name="color" maxlength="60" placeholder="例：深藍色、有貼紙"></label>
+        <label class="f">品牌 / 型號<input type="text" name="brand" maxlength="60" placeholder="選填"></label>
+        <label class="f full">公開描述<small>會顯示在招領公告上，請勿寫出可供冒領的關鍵細節</small><textarea name="desc" rows="2" maxlength="300"></textarea></label>
+        <div class="full">
+          <label class="f" style="margin-bottom:6px">物品照片 <small>選填，系統會自動壓縮</small></label>
+          <div class="photo-drop" id="photoDrop">
+            <div class="ph" id="photoPrev">📷</div>
+            <div><b>點此選擇照片</b> 或拖曳圖片到這裡<br><span class="meta">手機可直接拍照上傳</span>
+              <div><button type="button" class="btn sm hidden" id="photoClear" style="margin-top:6px">移除照片</button></div></div>
+          </div>
+          <input type="file" id="photoInput" accept="image/*" class="hidden">
+        </div>
+
+        <div class="sec">拾獲資訊</div>
+        <label class="f">拾獲日期 <span class="req">*</span><input type="date" name="foundDate" required></label>
+        <label class="f">拾獲地點 <span class="req">*</span><input type="text" name="location" required maxlength="60" list="locList" placeholder="例：操場司令台"></label>
+        <datalist id="locList"></datalist>
+        <label class="f">存放位置<input type="text" name="storage" maxlength="60" placeholder="例：生輔組 A 櫃第 2 層"></label>
+        <label class="f">經辦人<input type="text" name="handler" maxlength="30" placeholder="留空則填入登入者姓名"></label>
+
+        <div class="sec">僅處室人員可見</div>
+        <label class="f">拾獲人<input type="text" name="finder" maxlength="40" placeholder="例：701 王小明 / 清潔人員"></label>
+        <label class="f">拾獲人聯絡方式<input type="text" name="finderContact" maxlength="60" placeholder="選填"></label>
+        <label class="f full">辨識特徵（核對用）<small>例如內容物、刻字、卡片姓名、手機桌布等，供認領時核對真偽</small><textarea name="secret" rows="2" maxlength="300"></textarea></label>
+      </form>
+      <div class="actions">
+        <button class="btn" id="regReset" type="button">清除</button>
+        <button class="btn pri" id="regSubmit" type="button">登記物品</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 物品清冊 -->
+  <section id="v-manage" class="hidden">
+    <div class="toolbar">
+      <div class="search" style="flex:0 1 320px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="mq" type="text" placeholder="搜尋（含拾獲人、認領人）…">
+      </div>
+      <select id="mStatus">
+        <option value="all">全部狀態</option>
+        <option value="wait">待認領</option>
+        <option value="over">已逾保管期</option>
+        <option value="done">已認領</option>
+        <option value="gone">已處置</option>
+      </select>
+      <select id="mCat"><option value="all">全部類別</option></select>
+      <div class="sp"></div>
+      <button class="btn" id="refreshBtn">重新整理</button>
+      <button class="btn" id="copyCsv">複製清冊（可貼到 Excel）</button>
+      <a class="btn pri" href="#register" style="text-decoration:none">＋ 登記物品</a>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th></th><th>編號</th><th>物品</th><th>類別</th><th>拾獲日期</th><th>地點</th><th>存放</th><th>保管天數</th><th>狀態</th><th>認領人</th><th>操作</th></tr></thead>
+        <tbody id="mBody"></tbody>
+      </table>
+    </div>
+    <p class="meta" id="mCount" style="margin-top:10px"></p>
+  </section>
+
+  <!-- 統計 -->
+  <section id="v-stats" class="hidden">
+    <div class="kpis" id="kpis"></div>
+    <div class="two">
+      <div class="panel"><h2>各類別件數</h2><p class="desc">全部登記物品</p><div class="bars" id="barCat"></div></div>
+      <div class="panel"><h2>常見拾獲地點</h2><p class="desc">前 8 名</p><div class="bars" id="barLoc"></div></div>
+    </div>
+    <div class="panel" style="margin-top:16px"><h2>近 6 個月登記與認領</h2><p class="desc">依拾獲月份統計</p><div class="bars" id="barMonth"></div></div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="v-settings" class="hidden">
+    <div class="stack" style="max-width:760px">
+      <div class="panel">
+        <h2>變更我的密碼</h2>
+        <p class="desc" id="meLine"></p>
+        <form class="form" id="pwForm" autocomplete="off">
+          <label class="f full">目前密碼<input type="password" name="old" required autocomplete="current-password"></label>
+          <label class="f">新密碼<small>至少 8 個字元</small><input type="password" name="new1" required minlength="8" autocomplete="new-password"></label>
+          <label class="f">再輸入一次新密碼<small>&nbsp;</small><input type="password" name="new2" required minlength="8" autocomplete="new-password"></label>
+        </form>
+        <div class="actions"><button class="btn pri" id="pwSave">變更密碼</button></div>
+      </div>
+
+      <div class="panel admin-only">
+        <h2>系統設定</h2>
+        <p class="desc">套用到所有使用者的畫面。</p>
+        <div class="form">
+          <label class="f full">處室名稱 / 服務時間<input type="text" id="sOffice" maxlength="80"></label>
+          <label class="f full">招領公告說明<textarea id="sNotice" rows="3" maxlength="300"></textarea></label>
+          <label class="f">保管期限（天）<small>超過即標示「已逾保管期」</small><input type="number" id="sDays" min="1" max="3650"></label>
+          <label class="f">常用拾獲地點<small>以逗號分隔，登記時可快速選取</small><input type="text" id="sLocs"></label>
+        </div>
+        <div class="actions"><button class="btn pri" id="sSave">儲存設定</button></div>
+      </div>
+
+      <div class="panel admin-only">
+        <h2>帳號管理</h2>
+        <p class="desc">「處室人員」可以登記、認領、處置物品；「管理者」另外可以刪除物品、修改系統設定與管理帳號。新帳號會產生臨時密碼，請交給同仁登入後自行變更。</p>
+        <div class="tablewrap" style="box-shadow:none;margin-bottom:16px">
+          <table><thead><tr><th>帳號</th><th>姓名</th><th>角色</th><th>建立時間</th><th>操作</th></tr></thead><tbody id="uBody"></tbody></table>
+        </div>
+        <form class="form uform" id="uForm" autocomplete="off">
+          <label class="f">帳號<input type="text" name="username" required pattern="[A-Za-z0-9_.\-]{3,30}" placeholder="英數字，例：wang"></label>
+          <label class="f">姓名<input type="text" name="name" maxlength="40" placeholder="例：王老師"></label>
+          <label class="f">角色<select name="role"><option value="staff">處室人員</option><option value="admin">管理者</option></select></label>
+          <button class="btn pri" type="submit">新增帳號</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+<footer id="footer"></footer>
+
+<div id="modalRoot"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
