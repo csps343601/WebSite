@@ -107,6 +107,11 @@
         <datalist id="locList"></datalist>
         <label class="f">存放位置<input type="text" name="storage" maxlength="60" placeholder="例：生輔組 A 櫃第 2 層"></label>
         <label class="f">經辦人<input type="text" name="handler" maxlength="30" placeholder="留空則填入登入者姓名"></label>
+        <div class="f full">
+          <span style="font-size:13.5px;font-weight:500">保管期限 <small style="color:var(--muted);font-weight:400">到期後會標示「已逾保管期」並提醒處置</small></span>
+          <div class="seg" id="retSeg"></div>
+          <input type="hidden" name="retentionDays">
+        </div>
 
         <div class="sec">僅處室人員可見</div>
         <label class="f">拾獲人<input type="text" name="finder" maxlength="40" placeholder="例：701 王小明 / 清潔人員"></label>
@@ -138,6 +143,7 @@
         <option value="gone">已處置</option>
       </select>
       <select id="mCat"><option value="all">全部類別</option></select>
+      <select id="mRet"><option value="all">全部保管期限</option><option value="7">7 天</option><option value="14">14 天</option><option value="30">30 天</option><option value="60">60 天</option><option value="120">120 天</option><option value="180">180 天</option></select>
       <div class="sp"></div>
       <button class="btn" id="refreshBtn">重新整理</button>
       <button class="btn" id="copyCsv">複製清冊（可貼到 Excel）</button>
@@ -182,7 +188,8 @@
         <div class="form">
           <label class="f full">處室名稱 / 服務時間<input type="text" id="sOffice" maxlength="80"></label>
           <label class="f full">招領公告說明<textarea id="sNotice" rows="3" maxlength="300"></textarea></label>
-          <label class="f">保管期限（天）<small>超過即標示「已逾保管期」</small><input type="number" id="sDays" min="1" max="3650"></label>
+          <label class="f">預設保管期限<small>登記時沒有另外選擇的物品，套用這個期限</small><select id="sDays">
+          <option value="7">7 天</option><option value="14">14 天</option><option value="30">30 天</option><option value="60">60 天</option><option value="120">120 天</option><option value="180">180 天（6 個月）</option></select></label>
           <label class="f">常用拾獲地點<small>以逗號分隔，登記時可快速選取</small><input type="text" id="sLocs"></label>
         </div>
         <div class="actions"><button class="btn pri" id="sSave">儲存設定</button></div>

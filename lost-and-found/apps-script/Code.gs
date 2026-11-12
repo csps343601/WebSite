@@ -22,7 +22,7 @@ const COLS = [
   ['id', 'ID'], ['code', '編號'], ['name', '物品名稱'], ['category', '類別'],
   ['color', '顏色外觀'], ['brand', '品牌型號'], ['desc', '公開描述'],
   ['foundDate', '拾獲日期'], ['location', '拾獲地點'], ['storage', '存放位置'],
-  ['handler', '經辦人'], ['photoId', '照片ID'], ['status', '狀態'],
+  ['handler', '經辦人'], ['photoId', '照片ID'], ['status', '狀態'], ['retentionDays', '保管期限'],
   ['claimedDate', '認領日期'], ['createdAt', '建立時間'], ['updatedAt', '更新時間'],
   ['finder', '拾獲人'], ['finderContact', '拾獲人聯絡'], ['secret', '辨識特徵'],
   ['claimName', '認領人'], ['claimSid', '學號身分'], ['claimCls', '班級'],
@@ -31,9 +31,10 @@ const COLS = [
 ];
 // 學生、訪客（未登入）看得到的欄位
 const PUBLIC_KEYS = ['id', 'code', 'name', 'category', 'color', 'brand', 'desc',
-  'foundDate', 'location', 'photoId', 'status', 'claimedDate', 'createdAt'];
+  'foundDate', 'location', 'photoId', 'status', 'retentionDays', 'claimedDate', 'createdAt'];
 const ITEM_INPUT_KEYS = ['name', 'category', 'color', 'brand', 'desc', 'foundDate',
-  'location', 'storage', 'handler', 'finder', 'finderContact', 'secret'];
+  'location', 'storage', 'handler', 'finder', 'finderContact', 'secret', 'retentionDays'];
+const RETENTION_CHOICES = ['7', '14', '30', '60', '120', '180'];
 
 const DEFAULT_SETTINGS = {
   office: '學務處生活輔導組｜週一至週五 07:30–16:30',
@@ -132,7 +133,17 @@ function handle_(req) {
 
 /* ===================== 物品 ===================== */
 
-function itemsSheet_() { return sheet_(SHEET_ITEMS, COLS.map(c => c[1])); }
+function itemsSheet_() {
+  const sh = sheet_(SHEET_ITEMS, COLS.map(c => c[1]));
+  // 舊版試算表自動補上新欄位（例如「保管期限」）
+  const header = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+  const missing = COLS.map(c => c[1]).filter(t => header.indexOf(t) < 0);
+  if (missing.length) {
+    sh.getRange(1, header.filter(h => h !== '').length + 1, 1, missing.length)
+      .setValues([missing]).setFontWeight('bold').setBackground('#e3efee');
+  }
+  return sh;
+}
 
 function headerMap_(sh) {
   const header = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
@@ -211,6 +222,7 @@ function saveItem_(req, s) {
   if (!data.location) throw new Error('請填寫拾獲地點');
   if (!isDate_(data.foundDate)) throw new Error('拾獲日期格式不正確');
   if (!data.category) data.category = '其他';
+  if (data.retentionDays && RETENTION_CHOICES.indexOf(data.retentionDays) < 0) throw new Error('保管期限不正確');
   if (!data.handler) data.handler = s.name;
 
   let it;

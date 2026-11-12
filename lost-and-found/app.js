@@ -25,13 +25,13 @@ const S = {
   knownIds: null, newIds: new Set(), onlyNew: false, unseen: 0,
 };
 const BASE_TITLE = document.title;
-const SOON_DAYS = 14;
 
 /* ---------- 小工具 ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
 const daysSince = ds => ds ? Math.max(0, Math.floor((Date.parse(today()) - Date.parse(ds)) / 864e5)) : 0;
+const addDays = (ds, n) => { if (!ds) return ''; const d = new Date(Date.parse(ds) + n * 864e5); return d.toISOString().slice(0,10); };
 const fmtDate = ds => ds ? String(ds).slice(0,10).replace(/-/g, '/') : '—';
 const isStaff = () => !!S.me;
 const isAdmin = () => S.me?.role === 'admin';
@@ -40,10 +40,14 @@ const store = {
   set(k,v){ try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
 function toast(msg){ document.querySelectorAll('.toast').forEach(x => x.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), 2800); }
+const RET_CHOICES = [7, 14, 30, 60, 120];
+const RET_HINT = {7:'雨傘、餐具', 14:'衣物、文具', 30:'一般物品', 60:'較貴重', 120:'證件、3C、錢包'};
+const retOf = it => +it.retentionDays || +S.settings.retentionDays || 180;
+const soonDays = it => Math.min(14, Math.max(2, Math.round(retOf(it) * 0.2)));   // 7天→剩2天提醒、30天→剩6天、≥70天→剩14天
 function statusOf(it){
   if (it.status === '已認領') return 'done';
   if (it.status === '已處置') return 'gone';
-  if (daysSince(it.foundDate) > (+S.settings.retentionDays || 180)) return 'over';
+  if (daysSince(it.foundDate) > retOf(it)) return 'over';
   return 'wait';
 }
 const ST_LABEL = {wait:'待認領', done:'已認領', over:'已逾保管期', gone:'已處置'};
@@ -93,7 +97,7 @@ async function load(quiet){
     if (!S.me && store.get('lf_token')) store.set('lf_token', null);
     S.loaded = true;
     if (hadMe !== !!S.me) { applyRole(); route(); }
-    fillLocs(); render();
+    fillLocs(); if (!S.editId) paintRet(); render();
     if (!DEMO) setBanner('');
   } catch (e){
     console.error(e);
@@ -343,29 +347,29 @@ function manageList(){
   return S.items.filter(it => {
     const st = statusOf(it);
     if (fs === 'today'){ if ((it.createdAt||'').slice(0,10) !== today()) return false; }
-    else if (fs === 'soon'){ if (!(st === 'wait' && remain(it) <= SOON_DAYS)) return false; }
+    else if (fs === 'soon'){ if (!(st === 'wait' && remain(it) <= soonDays(it))) return false; }
     else if (fs !== 'all' && st !== fs) return false;
     if (fc !== 'all' && it.category !== fc) return false;
+    const fr = $('#mRet').value; if (fr !== 'all' && retOf(it) !== +fr) return false;
     return matchQ(it, q, [it.finder, it.claimName, it.claimSid, it.storage]);
   }).sort(byNewest);
 }
-const retention = () => +S.settings.retentionDays || 180;
-const remain = it => retention() - daysSince(it.foundDate);
+const remain = it => retOf(it) - daysSince(it.foundDate);
 function keepCell(it, st){
   if (st === 'done' || st === 'gone') return '—';
-  const d = daysSince(it.foundDate), r = remain(it), pct = Math.min(100, d / retention() * 100);
-  const cls = st === 'over' ? 'over' : r <= SOON_DAYS ? 'soon' : '';
-  const txt = st === 'over' ? `逾期 ${-r} 天` : `第 ${d} 天・剩 ${r} 天`;
+  const d = daysSince(it.foundDate), r = remain(it), pct = Math.min(100, d / retOf(it) * 100);
+  const cls = st === 'over' ? 'over' : r <= soonDays(it) ? 'soon' : '';
+  const txt = (st === 'over' ? `逾期 ${-r} 天` : `第 ${d} 天・剩 ${r} 天`) + `<span class="retchip">${retOf(it)} 天${it.retentionDays ? '' : '・預設'}</span>`;
   return `<div class="keep ${cls}"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span>${txt}</span></div>`;
 }
 function renderAlerts(){
   const over = S.items.filter(i => statusOf(i) === 'over').length;
-  const soon = S.items.filter(i => statusOf(i) === 'wait' && remain(i) <= SOON_DAYS).length;
+  const soon = S.items.filter(i => statusOf(i) === 'wait' && remain(i) <= soonDays(i)).length;
   const td = S.items.filter(i => (i.createdAt||'').slice(0,10) === today()).length;
   const cur = $('#mStatus').value;
   const a = [];
   if (over) a.push(`<div class="alert a-over ${cur==='over'?'on':''}" data-f="over"><span class="n">${over}</span><span>件已逾保管期<br><small>請安排處置</small></span></div>`);
-  if (soon) a.push(`<div class="alert a-soon ${cur==='soon'?'on':''}" data-f="soon"><span class="n">${soon}</span><span>件 ${SOON_DAYS} 天內到期<br><small>可再公告提醒</small></span></div>`);
+  if (soon) a.push(`<div class="alert a-soon ${cur==='soon'?'on':''}" data-f="soon"><span class="n">${soon}</span><span>件即將到期<br><small>可再公告提醒</small></span></div>`);
   a.push(`<div class="alert a-today ${cur==='today'?'on':''}" data-f="today"><span class="n">${td}</span><span>件今日登記<br><small>點擊查看</small></span></div>`);
   $('#alerts').innerHTML = a.join('');
 }
@@ -404,7 +408,7 @@ $('#mBody').addEventListener('click', e => {
   const id = b.closest('tr').dataset.id;
   ({claim: showClaim, view: showDetail, edit: startEdit})[b.dataset.a](id);
 });
-['#mq','#mStatus','#mCat'].forEach(s => $(s).addEventListener('input', renderManage));
+['#mq','#mStatus','#mCat','#mRet'].forEach(s => $(s).addEventListener('input', renderManage));
 $('#refreshBtn').addEventListener('click', async () => { await load(); toast('已更新'); });
 
 function bars(el, rows, note){
@@ -437,6 +441,12 @@ function fillSelects(){
 function fillLocs(){
   $('#locList').innerHTML = String(S.settings.locations||'').split(/[,，、]/).map(s=>s.trim()).filter(Boolean).map(s=>`<option value="${esc(s)}">`).join('');
 }
+function paintRet(){
+  const v = $('#regForm').retentionDays.value, def = +S.settings.retentionDays || 180;
+  $('#retSeg').innerHTML = `<button type="button" data-v="" class="${v===''?'on':''}">預設 ${def} 天<small>依系統設定</small></button>` +
+    RET_CHOICES.map(d => `<button type="button" data-v="${d}" class="${v===String(d)?'on':''}">${d} 天<small>${RET_HINT[d]}</small></button>`).join('');
+}
+$('#retSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; $('#regForm').retentionDays.value = b.dataset.v; paintRet(); });
 function showPhoto(src){
   $('#photoPrev').outerHTML = src ? `<img id="photoPrev" src="${esc(src)}" alt="" referrerpolicy="no-referrer">` : `<div class="ph" id="photoPrev">📷</div>`;
   $('#photoClear').classList.toggle('hidden', !src);
@@ -445,6 +455,7 @@ function resetForm(){
   S.editId = null; S.photoNew = null; S.photoExisting = null; S.photoRemoved = false;
   $('#regForm').reset(); showPhoto(null); $('#photoInput').value = '';
   $('#regForm').foundDate.value = today();
+  $('#regForm').retentionDays.value = ''; paintRet();
   $('#regTitle').textContent = '登記拾獲物品'; $('#regSubmit').textContent = '登記物品'; $('#regReset').textContent = '清除';
 }
 function startEdit(id){
@@ -453,8 +464,9 @@ function startEdit(id){
   S.editId = id;
   location.hash = '#register';
   const f = $('#regForm');
-  ['name','category','color','brand','desc','foundDate','location','storage','handler','finder','finderContact','secret'].forEach(k => f[k].value = it[k] || '');
+  ['name','category','color','brand','desc','foundDate','location','storage','handler','finder','finderContact','secret','retentionDays'].forEach(k => f[k].value = it[k] || '');
   if (!CAT[it.category]) f.category.value = '其他';
+  paintRet();
   S.photoNew = null; S.photoRemoved = false; S.photoExisting = it.photoId || null;
   showPhoto(photoSrc(it));
   $('#regTitle').textContent = `編輯物品　${it.code}`; $('#regSubmit').textContent = '儲存變更'; $('#regReset').textContent = '取消編輯';
@@ -512,7 +524,7 @@ $('#regSubmit').addEventListener('click', async () => {
   if (!f.reportValidity()) return;
   const v = k => f[k].value.trim();
   const item = {id: S.editId || ''};
-  ['name','category','color','brand','desc','foundDate','location','storage','handler','finder','finderContact','secret'].forEach(k => item[k] = v(k));
+  ['name','category','color','brand','desc','foundDate','location','storage','handler','finder','finderContact','secret','retentionDays'].forEach(k => item[k] = v(k));
   const btn = $('#regSubmit'); btn.disabled = true; btn.textContent = '儲存中…';
   try {
     const d = await api('saveItem', {item, photoData: S.photoNew || '', removePhoto: S.photoRemoved && !S.photoNew});
@@ -547,6 +559,7 @@ function showDetail(id){
   let staff = '';
   if (isStaff()){
     staff = `<h3 style="margin:18px 0 8px;font-size:15px;color:var(--brand)">處室內部資訊</h3><dl class="kv">
+      ${row('保管期限', `${retOf(it)} 天${it.retentionDays ? '' : '（系統預設）'}，到期日 ${fmtDate(addDays(it.foundDate, retOf(it)))}`)}
       ${row('存放位置',it.storage)}${row('經辦人',it.handler)}${row('拾獲人',it.finder)}${row('拾獲人聯絡',it.finderContact)}${row('辨識特徵',it.secret)}
       ${row('認領人',it.claimName)}${row('學號/身分',it.claimSid)}${row('班級',it.claimCls)}${row('聯絡電話',it.claimPhone)}
       ${it.claimName?row('認領日期',fmtDate(it.claimedDate)):''}${row('認領經辦',it.claimHandler)}${row('認領備註',it.claimNote)}
@@ -635,8 +648,8 @@ function showPassword(title, username, pw){
 
 /* ---------- 匯出 ---------- */
 $('#copyCsv').addEventListener('click', async () => {
-  const head = ['編號','物品名稱','類別','顏色外觀','品牌型號','拾獲日期','拾獲地點','存放位置','狀態','拾獲人','認領人','學號','班級','認領日期','處置方式','處置日期'];
-  const rows = manageList().map(it => [it.code,it.name,it.category,it.color,it.brand,it.foundDate,it.location,it.storage,ST_LABEL[statusOf(it)],it.finder,it.claimName,it.claimSid,it.claimCls,it.claimedDate,it.disposeMethod,it.disposeDate]);
+  const head = ['編號','物品名稱','類別','顏色外觀','品牌型號','拾獲日期','拾獲地點','存放位置','保管期限','到期日','狀態','拾獲人','認領人','學號','班級','認領日期','處置方式','處置日期'];
+  const rows = manageList().map(it => [it.code,it.name,it.category,it.color,it.brand,it.foundDate,it.location,it.storage,retOf(it)+' 天',addDays(it.foundDate,retOf(it)),ST_LABEL[statusOf(it)],it.finder,it.claimName,it.claimSid,it.claimCls,it.claimedDate,it.disposeMethod,it.disposeDate]);
   const tsv = [head, ...rows].map(r => r.map(c => String(c??'').replace(/[\t\n\r]/g,' ')).join('\t')).join('\n');
   try { await navigator.clipboard.writeText(tsv); toast(`已複製 ${rows.length} 筆，可直接貼到 Excel 或 Google 試算表`); }
   catch { openModal(`<h2>複製清冊</h2><p class="meta">請全選下方內容後複製：</p><textarea rows="12" style="font-family:monospace;font-size:12px">${esc(tsv)}</textarea><div class="actions"><button class="btn" data-close>關閉</button></div>`); }
@@ -647,7 +660,9 @@ function openSettings(){
   $('#meLine').textContent = S.me ? `目前登入：${S.me.name}（帳號 ${S.me.username}）` : '';
   $('#pwForm').reset();
   $('#sOffice').value = S.settings.office; $('#sNotice').value = S.settings.notice;
-  $('#sDays').value = S.settings.retentionDays; $('#sLocs').value = S.settings.locations;
+  const sd = String(S.settings.retentionDays || 180);
+  if (![...$('#sDays').options].some(o => o.value === sd)) $('#sDays').insertAdjacentHTML('beforeend', `<option value="${esc(sd)}">${esc(sd)} 天</option>`);
+  $('#sDays').value = sd; $('#sLocs').value = S.settings.locations;
   if (isAdmin()) loadUsers();
 }
 $('#pwSave').addEventListener('click', async e => {
@@ -661,7 +676,7 @@ $('#pwSave').addEventListener('click', async e => {
 $('#sSave').addEventListener('click', async e => {
   const settings = {office: $('#sOffice').value.trim(), notice: $('#sNotice').value.trim(), retentionDays: $('#sDays').value, locations: $('#sLocs').value.trim()};
   e.target.disabled = true;
-  try { const d = await api('saveSettings', {settings}); S.settings = {...S.settings, ...d.settings}; fillLocs(); render(); toast('設定已儲存'); }
+  try { const d = await api('saveSettings', {settings}); S.settings = {...S.settings, ...d.settings}; fillLocs(); paintRet(); render(); toast('設定已儲存'); }
   catch(err){ toast(err.message); }
   finally { e.target.disabled = false; }
 });
